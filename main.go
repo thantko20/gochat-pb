@@ -26,7 +26,9 @@ func main() {
 
 		var body MessageRequestBody
 		decoder := json.NewDecoder(bodyReader)
-		_ = decoder.Decode(&body)
+		if err := decoder.Decode(&body); err != nil {
+			return err
+		}
 
 		if body.Chat == "" && body.Receiver == "" {
 			return errors.New("something went wrong")
