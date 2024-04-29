@@ -9,24 +9,36 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/models"
+	"github.com/pocketbase/pocketbase/tools/hook"
 )
 
 type MessageRequestBody struct {
-	Receiver string `json:"receiver"`
-	Chat     string `json:"chat"`
-	Sender   string `json:"sender"`
+	Receiver string `json:"receiver" default:""`
+	Chat     string `json:"chat" default:""`
+	Sender   string `json:"sender" default:""`
 }
 
 func main() {
 	app := pocketbase.New()
 
-	app.OnRecordBeforeCreateRequest("messages").Add(func(e *core.RecordCreateEvent) error {
+	app.OnRecordBeforeCreateRequest("messages").Add(onBeforeCreateMessageRecord(app))
+	app.OnRecordAfterCreateRequest("messages").Add(onAfterCreateMessageRecord(app))
+
+	if err := app.Start(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func onBeforeCreateMessageRecord(app *pocketbase.PocketBase) hook.Handler[*core.RecordCreateEvent] {
+	return func(e *core.RecordCreateEvent) error {
+
 		bodyReader := e.HttpContext.Request().Body
 		defer bodyReader.Close()
 
 		var body MessageRequestBody
 		decoder := json.NewDecoder(bodyReader)
 		if err := decoder.Decode(&body); err != nil {
+			log.Println(err)
 			return err
 		}
 
@@ -73,9 +85,22 @@ func main() {
 		}
 
 		return nil
-	})
+	}
+}
 
-	if err := app.Start(); err != nil {
-		log.Fatal(err)
+func onAfterCreateMessageRecord(app *pocketbase.PocketBase) hook.Handler[*core.RecordCreateEvent] {
+	return func(e *core.RecordCreateEvent) error {
+		record, err := app.Dao().FindRecordById("chats", e.Record.Get("chat").(string))
+		if err != nil {
+			return err
+		}
+
+		record.Set("lastMessage", e.Record.Id)
+
+		if err := app.Dao().SaveRecord(record); err != nil {
+			return err
+		}
+
+		return nil
 	}
 }
